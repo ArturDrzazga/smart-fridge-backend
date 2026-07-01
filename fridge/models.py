@@ -38,3 +38,17 @@ class Product(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.quantity}) - {self.user.email}"
+
+
+class ShoppingList(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="shopping_lists",
+    )
+
+    items = models.JSONField(default=list)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Shopping List for {self.user.email}"
