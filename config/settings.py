@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "drf_yasg",
     "fridge",
+    "users"
 ]
 
 MIDDLEWARE = [
@@ -112,6 +113,7 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
+AUTH_USER_MODEL = "users.User"
 
 # Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/
