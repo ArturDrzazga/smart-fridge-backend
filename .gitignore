@@ -140,6 +140,9 @@ ENV/
 env.bak/
 venv.bak/
 
+#Static files
+staticfiles/
+
 # Spyder project settings
 .spyderproject
 .spyproject
