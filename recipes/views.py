@@ -18,7 +18,7 @@ class RecipeSuggestionView(APIView):
         return Response(
             {
                 "task_id": task.id,
-                "status": "PENDING",
+                "status": task.status,
                 "message": "Recipe suggestion task queued successfully.",
             },
             status=status.HTTP_202_ACCEPTED,
@@ -34,9 +34,9 @@ class RecipeSuggestionTaskStatusView(APIView):
             "status": task_result.status,
         }
 
-        if task_result.successful():
+        if task_result.status == "SUCCESS":
             response_data["result"] = task_result.result
-        elif task_result.failed():
+        elif task_result.status == "FAILURE":
             response_data["error"] = str(task_result.result)
 
         return Response(response_data, status=status.HTTP_200_OK)
