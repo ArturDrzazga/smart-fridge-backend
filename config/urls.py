@@ -26,6 +26,7 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/", include("fridge.urls", namespace="fridge")),
     path("api/auth/", include("users.urls")),
+    path("api/recipes/", include("recipes.urls")),
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path(
         "api/docs/",
