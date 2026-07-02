@@ -1,5 +1,6 @@
 from celery.result import AsyncResult
-from rest_framework import status
+from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema
+from rest_framework import serializers, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -7,7 +8,36 @@ from recipes.serializers import RecipeSuggestionRequestSerializer
 from recipes.tasks import generate_recipe_suggestions_task
 
 
+class RecipeSuggestionQueuedResponseSerializer(serializers.Serializer):
+    task_id = serializers.CharField()
+    status = serializers.CharField()
+    message = serializers.CharField()
+
+
+class RecipeSuggestionTaskStatusResponseSerializer(serializers.Serializer):
+    task_id = serializers.CharField()
+    status = serializers.CharField()
+    result = serializers.JSONField(required=False)
+    error = serializers.CharField(required=False)
+
+
 class RecipeSuggestionView(APIView):
+    @extend_schema(
+        request=RecipeSuggestionRequestSerializer,
+        responses={
+            202: OpenApiResponse(
+                response=RecipeSuggestionQueuedResponseSerializer,
+                description="Recipe suggestion task queued successfully.",
+            ),
+        },
+        examples=[
+            OpenApiExample(
+                "Recipe suggestion request",
+                value={"ingredients": ["eggs", "tomatoes", "cheese"]},
+                request_only=True,
+            ),
+        ],
+    )
     def post(self, request):
         serializer = RecipeSuggestionRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -26,6 +56,14 @@ class RecipeSuggestionView(APIView):
 
 
 class RecipeSuggestionTaskStatusView(APIView):
+    @extend_schema(
+        responses={
+            200: OpenApiResponse(
+                response=RecipeSuggestionTaskStatusResponseSerializer,
+                description="Recipe suggestion task status fetched successfully.",
+            ),
+        }
+    )
     def get(self, request, task_id):
         task_result = AsyncResult(task_id)
 
