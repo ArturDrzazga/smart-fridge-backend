@@ -1,5 +1,5 @@
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import generics
+from rest_framework import filters, generics
 from rest_framework.decorators import api_view
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -17,8 +17,10 @@ class ProductListAPIView(generics.ListAPIView):
     serializer_class = ProductSerializer
     permission_classes = [IsAuthenticated]
 
-    filter_backends = [DjangoFilterBackend]
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ["category", "storage"]
+    ordering_fields = ["expired_date", "created_at"]
+    ordering = ["expired_date"]
 
     def get_queryset(self):
         return Product.objects.filter(user=self.request.user)
