@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     "fridge",
     "users",
     "recipes",
+    "django_filters",
 ]
 
 MIDDLEWARE = [
