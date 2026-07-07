@@ -19,8 +19,8 @@ class ProductListAPIView(generics.ListAPIView):
 
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ["category", "storage"]
-    ordering_fields = ["expired_date", "created_at"]
-    ordering = ["expired_date"]
+    ordering_fields = ["expiry_date", "created_at"]
+    ordering = ["expiry_date"]
 
     def get_queryset(self):
         return Product.objects.filter(user=self.request.user)
