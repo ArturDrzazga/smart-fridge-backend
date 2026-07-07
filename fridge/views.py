@@ -1,5 +1,5 @@
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import filters, generics
+from rest_framework import filters, viewsets
 from rest_framework.decorators import api_view
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -13,7 +13,7 @@ def health_check(request):
     return Response({"status": "OK", "message": "Hello World"})
 
 
-class ProductListAPIView(generics.ListCreateAPIView):
+class ProductViewSet(viewsets.ModelViewSet):
     serializer_class = ProductSerializer
     permission_classes = [IsAuthenticated]
 
