@@ -26,3 +26,9 @@ class ProductSerializer(serializers.ModelSerializer):
             "expiry_date",
             "created_at"
         ]
+
+        extra_kwargs = {
+            "name": {"required": True, "allow_blank": False, "max_length": 100},
+            "quantity": {"required": False, "max_length": 20},
+            "expiry_date": {"required": True},
+        }
