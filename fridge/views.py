@@ -1,3 +1,4 @@
+from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import generics
 from rest_framework.decorators import api_view
 from rest_framework.permissions import IsAuthenticated
@@ -15,6 +16,9 @@ def health_check(request):
 class ProductListAPIView(generics.ListAPIView):
     serializer_class = ProductSerializer
     permission_classes = [IsAuthenticated]
+
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ["category", "storage"]
 
     def get_queryset(self):
         return Product.objects.filter(user=self.request.user)
