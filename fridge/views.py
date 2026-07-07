@@ -13,7 +13,7 @@ def health_check(request):
     return Response({"status": "OK", "message": "Hello World"})
 
 
-class ProductListAPIView(generics.ListAPIView):
+class ProductListAPIView(generics.ListCreateAPIView):
     serializer_class = ProductSerializer
     permission_classes = [IsAuthenticated]
 
@@ -23,4 +23,9 @@ class ProductListAPIView(generics.ListAPIView):
     ordering = ["expiry_date"]
 
     def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False):
+            return Product.objects.none()
         return Product.objects.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
