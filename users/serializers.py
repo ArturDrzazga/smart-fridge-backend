@@ -1,5 +1,6 @@
 from django.contrib.auth import authenticate
 from rest_framework import serializers
+from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from users.models import User
@@ -43,7 +44,7 @@ class LoginSerializer(TokenObtainPairSerializer):
         )
 
         if user is None:
-            raise serializers.ValidationError("Invalid email or password.")
+            raise AuthenticationFailed("Invalid email or password.")
 
         data = super().validate(
             {
