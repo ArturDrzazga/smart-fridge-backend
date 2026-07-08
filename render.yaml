@@ -1,0 +1,59 @@
+services:
+
+  - type: db
+    name: fridge-db-qa
+    databaseName: smart_fridge
+    user: fridge_user
+
+
+  - type: redis
+    name: fridge-redis-qa
+    ipAllowList: []
+
+
+  - type: web
+    name: fridge-web-qa
+    env: docker
+    repo: https://github.com/ArturDrzazga/smart-fridge-backend
+    buildCommand: docker build -t web -f Dockerfile .
+    startCommand: python manage.py migrate && gunicorn config.wsgi:application --bind 0.0.0.0:$PORT
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: fridge-db-qa
+          property: connectionString
+      - key: CELERY_BROKER_URL
+        fromRedis:
+          name: fridge-redis-qa
+          property: connectionString
+      - key: CELERY_RESULT_BACKEND
+        fromRedis:
+          name: fridge-redis-qa
+          property: connectionString
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+
+  - type: worker
+    name: fridge-celery-qa
+    env: docker
+    repo: https://github.com/ArturDrzazga/smart-fridge-backend
+    startCommand: celery -A config worker --loglevel=info
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: fridge-db-qa
+          property: connectionString
+      - key: CELERY_BROKER_URL
+        fromRedis:
+          name: fridge-redis-qa
+          property: connectionString
+      - key: CELERY_RESULT_BACKEND
+        fromRedis:
+          name: fridge-redis-qa
+          property: connectionString
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
