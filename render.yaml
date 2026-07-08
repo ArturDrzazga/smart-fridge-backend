@@ -1,6 +1,6 @@
 services:
 
-  - type: postgres
+  - type: db
     name: fridge-db-qa
     databaseName: smart_fridge
     user: fridge_user
