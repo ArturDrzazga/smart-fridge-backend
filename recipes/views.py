@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from recipes.serializers import RecipeSuggestionRequestSerializer
+from recipes.services.limits import check_daily_limit
 from recipes.tasks import generate_recipe_task
 
 
@@ -42,8 +43,21 @@ class RecipeSuggestionView(APIView):
         serializer = RecipeSuggestionRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
+        user_id = request.user.id \
+            if request.user.is_authenticated \
+            else f"anon_{request.meta.get('REMOTE_ADDR')}"
+
+        is_allowed, remaining = check_daily_limit(user_id)
+        if not is_allowed:
+            return Response(
+                {
+                    "error": "Daily limit reached",
+                    "remaining": 0
+                },
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
         ingredients = request.data.get("ingredients", [])
-        user_id = request.user.id if request.user.is_authenticated else "anonymous"
         task = generate_recipe_task.delay(user_id=user_id, ingredients=ingredients)
 
         return Response(
@@ -51,6 +65,7 @@ class RecipeSuggestionView(APIView):
                 "task_id": task.id,
                 "status": task.status,
                 "message": "Recipe suggestion task queued successfully.",
+                "remaining": remaining,
             },
             status=status.HTTP_202_ACCEPTED,
         )
