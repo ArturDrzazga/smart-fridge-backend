@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from recipes.serializers import RecipeSuggestionRequestSerializer
-from recipes.tasks import generate_recipe_suggestions_task
+from recipes.tasks import generate_recipe_task
 
 
 class RecipeSuggestionQueuedResponseSerializer(serializers.Serializer):
@@ -42,8 +42,9 @@ class RecipeSuggestionView(APIView):
         serializer = RecipeSuggestionRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        ingredients = serializer.validated_data["ingredients"]
-        task = generate_recipe_suggestions_task.delay(ingredients)
+        ingredients = request.data.get("ingredients", [])
+        user_id = request.user.id if request.user.is_authenticated else "anonymous"
+        task = generate_recipe_task.delay(user_id=user_id, ingredients=ingredients)
 
         return Response(
             {
