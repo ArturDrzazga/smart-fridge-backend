@@ -9,18 +9,16 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from recipes.exceptions import GeminiTimeoutError
-from recipes.serializers import RecipeSuggestionRequestSerializer
-from recipes.services.limits import check_daily_limit
-from recipes.tasks import generate_recipe_task
 from recipes.serializers import (
     RecipeGenerateResponseSerializer,
     RecipeSuggestionRequestSerializer,
 )
+from recipes.services.limits import check_daily_limit
 from recipes.services.rate_limit import (
     DAILY_RECIPE_GENERATION_LIMIT,
     check_and_increment_daily_limit,
 )
-from recipes.tasks import generate_recipe_suggestions_task
+from recipes.tasks import generate_recipe_suggestions_task, generate_recipe_task
 
 logger = logging.getLogger("django")
 
@@ -66,7 +64,7 @@ class RecipeSuggestionView(APIView):
 
         user_id = request.user.id \
             if request.user.is_authenticated \
-            else f"anon_{request.META.get("REMOTE_ADDR")}"
+            else f"anon_{request.META.get('REMOTE_ADDR')}"
 
         is_allowed, remaining = check_daily_limit(user_id)
         if not is_allowed:
@@ -78,18 +76,15 @@ class RecipeSuggestionView(APIView):
                 status=status.HTTP_429_TOO_MANY_REQUESTS,
             )
 
-        ingredients = request.data.get("ingredients", [])
+        ingredients = serializer.validated_data.get("ingredients") or None
+        # If the client didn't provide an explicit ingredient list, pass
+        # None so the Celery task knows to fetch the user's fridge
+        # contents from the database instead.
         try:
             task = generate_recipe_task.delay(user_id=user_id, ingredients=ingredients)
         except Exception as exc:
             logger.error(f"Failed to queue Celery task: {str(exc)}")
             raise GeminiTimeoutError()
-        # If the client didn't provide an explicit ingredient list, pass
-        # None so the Celery task knows to fetch the user's fridge
-        # contents from the database instead.
-        ingredients = serializer.validated_data.get("ingredients") or None
-
-        task = generate_recipe_suggestions_task.delay(request.user.id, ingredients)
 
         return Response(
             {
