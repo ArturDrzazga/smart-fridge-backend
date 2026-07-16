@@ -13,3 +13,12 @@ class RecipeSuggestionRequestSerializer(serializers.Serializer):
         allow_empty=True,
     )
 
+
+class RecipeGenerateItemSerializer(serializers.Serializer):
+    title = serializers.CharField()
+    ingredients = serializers.ListField(child=serializers.CharField())
+    steps = serializers.ListField(child=serializers.CharField())
+
+
+class RecipeGenerateResponseSerializer(serializers.Serializer):
+    recipes = RecipeGenerateItemSerializer(many=True)
