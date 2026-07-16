@@ -1,8 +1,10 @@
 from datetime import date
 
 from django.test import SimpleTestCase
+from django.test.testcases import TestCase
 
-from recipes.services.prompts import build_recipe_prompt, RECIPE_PROMPT_TEMPLATE
+from recipes.services.parser import parse_gemini_response
+from recipes.services.prompts import RECIPE_PROMPT_TEMPLATE, build_recipe_prompt
 
 
 class BuildRecipePromptTests(SimpleTestCase):
@@ -118,3 +120,46 @@ class BuildRecipePromptTests(SimpleTestCase):
 
     def test_template_constant_has_ingredients_placeholder(self):
         self.assertIn("{ingredients_section}", RECIPE_PROMPT_TEMPLATE)
+
+
+class GeminiParserTestCase(TestCase):
+
+    def test_parse_valid_response(self):
+        raw_json = """
+        {
+          "recipes": [
+            {
+              "title": "Quick Scrambled Eggs",
+              "ingredients": ["eggs", "butter"],
+              "steps": ["Melt butter.", "Whisk eggs and cook."]
+            }
+          ]
+        }
+        """
+        result = parse_gemini_response(raw_json)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["title"], "Quick Scrambled Eggs")
+        self.assertEqual(result[0]["ingredients"], ["eggs", "butter"])
+
+    def test_parse_malformed_json_graceful_handling(self):
+        bad_json = "{ 'recipes': [ { 'title': 'Broken Recipe'... "
+        result = parse_gemini_response(bad_json)
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["title"], "Error generating recipe")
+        self.assertIn("invalid recipe structure", result[0]["steps"][0])
+
+    def test_parse_missing_fields_fallback(self):
+        missing_fields_json = """
+        {
+          "recipes": [
+            {
+              "title": "No Ingredient Salad"
+            }
+          ]
+        }
+        """
+        result = parse_gemini_response(missing_fields_json)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["ingredients"], [])
+        self.assertEqual(result[0]["steps"], ["No instructions provided by AI."])
