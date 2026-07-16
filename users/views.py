@@ -7,6 +7,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from users.serializers import (
     LoginSerializer,
     RegisterSerializer,
+    UserProfileSerializer,
     UserRegistrationResponseSerializer,
 )
 
@@ -72,3 +73,15 @@ class ProtectedTestView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class UserProfileView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        responses={200: UserProfileSerializer},
+        description="Returns id, email, and registration date",
+    )
+    def get(self, request):
+        serializer = UserProfileSerializer(request.user)
+        return Response(serializer.data, status=status.HTTP_200_OK)

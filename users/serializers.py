@@ -53,3 +53,10 @@ class LoginSerializer(TokenObtainPairSerializer):
             }
         )
         return data
+
+
+class UserProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ["id", "email", "created_at"]
+        read_only_fields = ["id", "email", "created_at"]
