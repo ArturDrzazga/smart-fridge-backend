@@ -4,6 +4,7 @@ import logging
 from celery import shared_task
 from django.core.cache import cache
 
+from recipes.exceptions import GeminiTimeoutError
 from recipes.services.gemini_service import generate_recipe_suggestions
 from recipes.services.parser import parse_gemini_response
 
@@ -36,4 +37,8 @@ def generate_recipe_task(self, user_id, ingredients):
 
     except Exception as exc:
         logger.error(f"Error generating recipe for user {user_id}: {str(exc)}")
+
+        if self.request.retries >= self.max_retries:
+            raise GeminiTimeoutError()
+
         raise self.retry(exc=exc)

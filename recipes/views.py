@@ -1,13 +1,17 @@
+import logging
+
 from celery.result import AsyncResult
 from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema
 from rest_framework import serializers, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from recipes.exceptions import GeminiTimeoutError
 from recipes.serializers import RecipeSuggestionRequestSerializer
 from recipes.services.limits import check_daily_limit
 from recipes.tasks import generate_recipe_task
 
+logger = logging.getLogger("django")
 
 class RecipeSuggestionQueuedResponseSerializer(serializers.Serializer):
     task_id = serializers.CharField()
@@ -43,9 +47,10 @@ class RecipeSuggestionView(APIView):
         serializer = RecipeSuggestionRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
+
         user_id = request.user.id \
             if request.user.is_authenticated \
-            else f"anon_{request.meta.get('REMOTE_ADDR')}"
+            else f"anon_{request.META.get("REMOTE_ADDR")}"
 
         is_allowed, remaining = check_daily_limit(user_id)
         if not is_allowed:
@@ -58,7 +63,11 @@ class RecipeSuggestionView(APIView):
             )
 
         ingredients = request.data.get("ingredients", [])
-        task = generate_recipe_task.delay(user_id=user_id, ingredients=ingredients)
+        try:
+            task = generate_recipe_task.delay(user_id=user_id, ingredients=ingredients)
+        except Exception as exc:
+            logger.error(f"Failed to queue Celery task: {str(exc)}")
+            raise GeminiTimeoutError()
 
         return Response(
             {

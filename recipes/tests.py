@@ -1,8 +1,12 @@
 from datetime import date
+from unittest.mock import patch
 
 from django.test import SimpleTestCase
 from django.test.testcases import TestCase
+from django.urls import reverse
+from rest_framework.test import APITestCase
 
+from recipes.exceptions import GeminiTimeoutError
 from recipes.services.parser import parse_gemini_response
 from recipes.services.prompts import RECIPE_PROMPT_TEMPLATE, build_recipe_prompt
 
@@ -163,3 +167,23 @@ class GeminiParserTestCase(TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["ingredients"], [])
         self.assertEqual(result[0]["steps"], ["No instructions provided by AI."])
+
+
+class GeminiExceptionHandlingTestCase(APITestCase):
+
+    @patch("recipes.views.check_daily_limit")
+    def test_gemini_timeout_returns_503(self, mock_limit):
+        mock_limit.return_value = (True, 4)
+
+        with patch("recipes.views.generate_recipe_task.delay") as mock_task:
+            mock_task.side_effect = GeminiTimeoutError()
+
+            url = reverse("recipes:recipe-suggestions")
+            data = {"ingredients": ["eggs"]}
+
+            response = self.client.post(url, data, format="json")
+
+            self.assertEqual(response.status_code, 503)
+            self.assertEqual(
+                response.data, {"error": "AI service temporarily unavailable"}
+            )
