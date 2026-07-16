@@ -1,22 +1,15 @@
-from datetime import date
-from unittest.mock import patch
-
-from django.test import SimpleTestCase
-from django.test.testcases import TestCase
-from django.urls import reverse
-from rest_framework.test import APITestCase
-
-from recipes.exceptions import GeminiTimeoutError
-from recipes.services.parser import parse_gemini_response
-from recipes.services.prompts import RECIPE_PROMPT_TEMPLATE, build_recipe_prompt
 from datetime import date, timedelta
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import SimpleTestCase, TestCase
+from django.urls import reverse
+from rest_framework.test import APITestCase
 
 from fridge.models import Product
-from recipes.services.prompts import build_recipe_prompt, RECIPE_PROMPT_TEMPLATE
+from recipes.exceptions import GeminiTimeoutError
+from recipes.services.parser import parse_gemini_response
+from recipes.services.prompts import RECIPE_PROMPT_TEMPLATE, build_recipe_prompt
 from recipes.tasks import _get_user_fridge_ingredients, generate_recipe_suggestions_task
 
 User = get_user_model()
@@ -322,3 +315,40 @@ class GenerateRecipeSuggestionsTaskTests(TestCase):
 
         called_ingredients = mock_generate.call_args[0][0]
         self.assertEqual(called_ingredients, [])
+
+    @patch("recipes.tasks.generate_recipe_suggestions")
+    def test_task_happy_path_returns_recipe(self, mock_generate):
+        mock_generate.return_value = {
+            "recipes": [
+                {
+                    "title": "Test Recipe",
+                    "ingredients": ["eggs"],
+                    "steps": ["Cook eggs."]
+                }
+            ]
+        }
+
+        result = generate_recipe_suggestions_task.run(self.user.id, ["eggs"])
+
+        self.assertEqual(len(result["recipes"]), 1)
+        self.assertEqual(result["recipes"][0]["title"], "Test Recipe")
+
+    @patch("recipes.tasks.generate_recipe_suggestions")
+    def test_task_empty_fridge_fallback_message(self, mock_generate):
+        mock_generate.return_value = {
+            "recipes": [],
+            "message": "No ingredients provided. "
+                       "Please add some products to your fridge."
+        }
+
+        result = generate_recipe_suggestions_task.run(self.user.id, [])
+
+        self.assertEqual(result["recipes"], [])
+        self.assertIn("No ingredients", result.get("message", ""))
+
+    @patch("recipes.tasks.generate_recipe_suggestions")
+    def test_task_gemini_timeout_retry_and_raises_503(self, mock_generate):
+        mock_generate.side_effect = GeminiTimeoutError()
+
+        with self.assertRaises(GeminiTimeoutError):
+            generate_recipe_suggestions_task.run(self.user.id, ["eggs"])
