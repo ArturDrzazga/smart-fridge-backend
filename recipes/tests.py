@@ -1,3 +1,14 @@
+from datetime import date
+from unittest.mock import patch
+
+from django.test import SimpleTestCase
+from django.test.testcases import TestCase
+from django.urls import reverse
+from rest_framework.test import APITestCase
+
+from recipes.exceptions import GeminiTimeoutError
+from recipes.services.parser import parse_gemini_response
+from recipes.services.prompts import RECIPE_PROMPT_TEMPLATE, build_recipe_prompt
 from datetime import date, timedelta
 from unittest.mock import patch
 
@@ -126,6 +137,67 @@ class BuildRecipePromptTests(SimpleTestCase):
         self.assertIn("{ingredients_section}", RECIPE_PROMPT_TEMPLATE)
 
 
+class GeminiParserTestCase(TestCase):
+
+    def test_parse_valid_response(self):
+        raw_json = """
+        {
+          "recipes": [
+            {
+              "title": "Quick Scrambled Eggs",
+              "ingredients": ["eggs", "butter"],
+              "steps": ["Melt butter.", "Whisk eggs and cook."]
+            }
+          ]
+        }
+        """
+        result = parse_gemini_response(raw_json)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["title"], "Quick Scrambled Eggs")
+        self.assertEqual(result[0]["ingredients"], ["eggs", "butter"])
+
+    def test_parse_malformed_json_graceful_handling(self):
+        bad_json = "{ 'recipes': [ { 'title': 'Broken Recipe'... "
+        result = parse_gemini_response(bad_json)
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["title"], "Error generating recipe")
+        self.assertIn("invalid recipe structure", result[0]["steps"][0])
+
+    def test_parse_missing_fields_fallback(self):
+        missing_fields_json = """
+        {
+          "recipes": [
+            {
+              "title": "No Ingredient Salad"
+            }
+          ]
+        }
+        """
+        result = parse_gemini_response(missing_fields_json)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["ingredients"], [])
+        self.assertEqual(result[0]["steps"], ["No instructions provided by AI."])
+
+
+class GeminiExceptionHandlingTestCase(APITestCase):
+
+    @patch("recipes.views.check_daily_limit")
+    def test_gemini_timeout_returns_503(self, mock_limit):
+        mock_limit.return_value = (True, 4)
+
+        with patch("recipes.views.generate_recipe_task.delay") as mock_task:
+            mock_task.side_effect = GeminiTimeoutError()
+
+            url = reverse("recipes:recipe-suggestions")
+            data = {"ingredients": ["eggs"]}
+
+            response = self.client.post(url, data, format="json")
+
+            self.assertEqual(response.status_code, 503)
+            self.assertEqual(
+                response.data, {"error": "AI service temporarily unavailable"}
+            )
 class GetUserFridgeIngredientsTests(TestCase):
     """
     Tests for _get_user_fridge_ingredients(), which pulls a user's
