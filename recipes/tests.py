@@ -9,6 +9,17 @@ from rest_framework.test import APITestCase
 from recipes.exceptions import GeminiTimeoutError
 from recipes.services.parser import parse_gemini_response
 from recipes.services.prompts import RECIPE_PROMPT_TEMPLATE, build_recipe_prompt
+from datetime import date, timedelta
+from unittest.mock import patch
+
+from django.contrib.auth import get_user_model
+from django.test import SimpleTestCase, TestCase
+
+from fridge.models import Product
+from recipes.services.prompts import build_recipe_prompt, RECIPE_PROMPT_TEMPLATE
+from recipes.tasks import _get_user_fridge_ingredients, generate_recipe_suggestions_task
+
+User = get_user_model()
 
 
 class BuildRecipePromptTests(SimpleTestCase):
@@ -187,3 +198,127 @@ class GeminiExceptionHandlingTestCase(APITestCase):
             self.assertEqual(
                 response.data, {"error": "AI service temporarily unavailable"}
             )
+class GetUserFridgeIngredientsTests(TestCase):
+    """
+    Tests for _get_user_fridge_ingredients(), which pulls a user's
+    fridge/freezer contents from the database and formats them for the
+    Gemini prompt builder.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="fridgeowner@example.com", password="TestPass123"
+        )
+        self.other_user = User.objects.create_user(
+            email="someoneelse@example.com", password="TestPass123"
+        )
+        self.today = date(2026, 7, 9)
+
+    def test_empty_fridge_returns_empty_list(self):
+        result = _get_user_fridge_ingredients(self.user.id)
+        self.assertEqual(result, [])
+
+    def test_single_product_returned_with_expiry(self):
+        Product.objects.create(
+            user=self.user,
+            name="eggs",
+            quantity="6",
+            expiry_date=self.today + timedelta(days=5),
+        )
+        result = _get_user_fridge_ingredients(self.user.id)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["name"], "eggs")
+        self.assertEqual(
+            result[0]["expiry_date"], (self.today + timedelta(days=5)).isoformat()
+        )
+
+    def test_products_sorted_by_soonest_expiry_first(self):
+        Product.objects.create(
+            user=self.user, name="cheese", quantity="200g",
+            expiry_date=self.today + timedelta(days=20),
+        )
+        Product.objects.create(
+            user=self.user, name="spinach", quantity="1 bag",
+            expiry_date=self.today + timedelta(days=1),
+        )
+        Product.objects.create(
+            user=self.user, name="milk", quantity="1L",
+            expiry_date=self.today + timedelta(days=10),
+        )
+        result = _get_user_fridge_ingredients(self.user.id)
+        names_in_order = [item["name"] for item in result]
+        self.assertEqual(names_in_order, ["spinach", "milk", "cheese"])
+
+    def test_only_returns_current_users_products(self):
+        Product.objects.create(
+            user=self.user, name="eggs", quantity="6",
+            expiry_date=self.today + timedelta(days=5),
+        )
+        Product.objects.create(
+            user=self.other_user, name="butter", quantity="250g",
+            expiry_date=self.today + timedelta(days=5),
+        )
+        result = _get_user_fridge_ingredients(self.user.id)
+        names = [item["name"] for item in result]
+        self.assertIn("eggs", names)
+        self.assertNotIn("butter", names)
+
+    def test_expired_product_still_included(self):
+        Product.objects.create(
+            user=self.user, name="yogurt", quantity="1",
+            expiry_date=self.today - timedelta(days=3),
+        )
+        result = _get_user_fridge_ingredients(self.user.id)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["name"], "yogurt")
+
+
+class GenerateRecipeSuggestionsTaskTests(TestCase):
+    """
+    Tests for generate_recipe_suggestions_task(), verifying it fetches
+    from the database when no explicit ingredient list is given, and
+    respects a manually provided list when one is passed.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="tasktest@example.com", password="TestPass123"
+        )
+        self.today = date(2026, 7, 9)
+
+    @patch("recipes.tasks.generate_recipe_suggestions")
+    def test_fetches_from_db_when_no_ingredients_given(self, mock_generate):
+        Product.objects.create(
+            user=self.user, name="tomatoes", quantity="4",
+            expiry_date=self.today + timedelta(days=2),
+        )
+        mock_generate.return_value = {"recipes": []}
+
+        generate_recipe_suggestions_task.run(self.user.id, None)
+
+        called_ingredients = mock_generate.call_args[0][0]
+        self.assertEqual(len(called_ingredients), 1)
+        self.assertEqual(called_ingredients[0]["name"], "tomatoes")
+
+    @patch("recipes.tasks.generate_recipe_suggestions")
+    def test_uses_manual_ingredients_when_provided(self, mock_generate):
+        Product.objects.create(
+            user=self.user, name="tomatoes", quantity="4",
+            expiry_date=self.today + timedelta(days=2),
+        )
+        mock_generate.return_value = {"recipes": []}
+
+        manual_list = ["eggs", "cheese"]
+        generate_recipe_suggestions_task.run(self.user.id, manual_list)
+
+        called_ingredients = mock_generate.call_args[0][0]
+        self.assertEqual(called_ingredients, manual_list)
+
+    @patch("recipes.tasks.generate_recipe_suggestions")
+    def test_empty_fridge_calls_generate_with_empty_list(self, mock_generate):
+        mock_generate.return_value = {"recipes": []}
+
+        generate_recipe_suggestions_task.run(self.user.id, None)
+
+        called_ingredients = mock_generate.call_args[0][0]
+        self.assertEqual(called_ingredients, [])
