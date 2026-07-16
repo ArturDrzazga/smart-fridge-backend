@@ -9,9 +9,13 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from recipes.exceptions import GeminiTimeoutError
+from recipes.models import Recipe, SavedRecipe
 from recipes.serializers import (
     RecipeGenerateResponseSerializer,
+    RecipeSaveRequestSerializer,
     RecipeSuggestionRequestSerializer,
+    SavedRecipeCreateResponseSerializer,
+    SavedRecipeResponseSerializer,
 )
 from recipes.services.limits import check_daily_limit
 from recipes.services.rate_limit import (
@@ -21,6 +25,7 @@ from recipes.services.rate_limit import (
 from recipes.tasks import generate_recipe_suggestions_task, generate_recipe_task
 
 logger = logging.getLogger("django")
+
 
 class RecipeSuggestionQueuedResponseSerializer(serializers.Serializer):
     task_id = serializers.CharField()
@@ -61,7 +66,6 @@ class RecipeSuggestionView(APIView):
         serializer = RecipeSuggestionRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-
         user_id = request.user.id \
             if request.user.is_authenticated \
             else f"anon_{request.META.get('REMOTE_ADDR')}"
@@ -91,7 +95,6 @@ class RecipeSuggestionView(APIView):
                 "task_id": task.id,
                 "status": task.status,
                 "message": "Recipe suggestion task queued successfully.",
-                "remaining": remaining,
             },
             status=status.HTTP_202_ACCEPTED,
         )
@@ -128,9 +131,6 @@ def _map_to_generate_schema(gemini_result):
     (title, ingredients_used, missing_ingredients, instructions, prep_time_minutes)
     to the simplified schema required by POST /api/recipes/generate/:
     (title, ingredients, steps).
-
-    "ingredients" combines both ingredients_used and missing_ingredients,
-    since the simplified schema doesn't distinguish between the two.
     """
     recipes = []
     for recipe in gemini_result.get("recipes", []):
@@ -192,9 +192,6 @@ class RecipeGenerateView(APIView):
                 status=status.HTTP_429_TOO_MANY_REQUESTS,
             )
 
-        # ingredients=None -> task automatically fetches the user's
-        # fridge contents from the DB (SFA-427), reusing the same
-        # fetch-and-prioritize logic as /api/recipes/suggestions/.
         task = generate_recipe_suggestions_task.delay(request.user.id, None)
 
         try:
@@ -216,3 +213,107 @@ class RecipeGenerateView(APIView):
             )
 
         return Response(_map_to_generate_schema(result), status=status.HTTP_200_OK)
+
+
+# --- Saved recipes ---------------------------------------------------
+
+STEPS_SEPARATOR = "\n"
+
+
+def _serialize_saved_recipe(recipe):
+    """Converts a Recipe model instance into the API's list-based shape."""
+    steps_text = recipe.steps or ""
+    steps = [line for line in steps_text.split(STEPS_SEPARATOR) if line]
+    return {
+        "id": recipe.id,
+        "title": recipe.title,
+        "ingredients": recipe.ingredients or [],
+        "steps": steps,
+        "created_at": recipe.created_at,
+    }
+
+
+class SaveRecipeView(APIView):
+    """
+    Allows an authenticated user to save an existing recipe (by id) to
+    their favourites (SFA-357). Prevents duplicate bookmarks via an
+    explicit check backed by the SavedRecipe.unique_together
+    ("user", "recipe") constraint (SFA-358).
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        request=RecipeSaveRequestSerializer,
+        responses={
+            201: OpenApiResponse(
+                response=SavedRecipeCreateResponseSerializer,
+                description="Recipe saved to favourites successfully.",
+            ),
+            400: OpenApiResponse(
+                description="This recipe is already saved to favourites.",
+            ),
+            404: OpenApiResponse(description="Recipe not found."),
+        },
+    )
+    def post(self, request):
+        serializer = RecipeSaveRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        recipe_id = serializer.validated_data["recipe_id"]
+
+        try:
+            recipe = Recipe.objects.get(id=recipe_id)
+        except Recipe.DoesNotExist:
+            return Response(
+                {"detail": "Recipe not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        already_saved = SavedRecipe.objects.filter(
+            user=request.user, recipe=recipe
+        ).exists()
+        if already_saved:
+            return Response(
+                {"detail": "This recipe is already saved to your favourites."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        saved = SavedRecipe.objects.create(user=request.user, recipe=recipe)
+
+        return Response(
+            {
+                "id": saved.id,
+                "user_id": request.user.id,
+                "recipe_id": recipe.id,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class SavedRecipeListView(APIView):
+    """
+    Returns all recipes saved by the authenticated user (SFA-362), with
+    full recipe details (title, ingredients, steps). Uses
+    select_related("recipe") (SFA-363) to avoid N+1 queries.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        responses={
+            200: OpenApiResponse(
+                response=SavedRecipeResponseSerializer(many=True),
+                description="List of the authenticated user's saved recipes.",
+            ),
+        },
+    )
+    def get(self, request):
+        saved_recipes = (
+            SavedRecipe.objects.filter(user=request.user)
+            .select_related("recipe")
+            .order_by("-recipe__created_at")
+        )
+        data = [
+            _serialize_saved_recipe(saved.recipe) for saved in saved_recipes
+        ]
+        return Response(data, status=status.HTTP_200_OK)
