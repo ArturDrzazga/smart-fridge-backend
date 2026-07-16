@@ -108,3 +108,37 @@ class RegisterEndpointTests(APITestCase):
         self.assertTrue(
             User.objects.filter(email="mixedcase@example.com").exists()
         )
+
+
+class UserProfileEndpointTests(APITestCase):
+    """
+    Tests for GET /api/auth/me/
+
+    Covers acceptance criteria:
+    - Returns 200: { id, email, created_at } for authenticated user
+    - Returns 401 if no valid JWT token is provided
+    """
+
+    def setUp(self):
+        self.url = reverse("user-profile")
+        self.user = User.objects.create_user(
+            email="profileuser@example.com",
+            password="SecurePass123"
+        )
+
+    def test_get_profile_authenticated_returns_200_with_expected_fields(self):
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["id"], self.user.id)
+        self.assertEqual(response.data["email"], self.user.email)
+        self.assertIn("created_at", response.data)
+
+    def test_get_profile_unauthenticated_returns_401(self):
+        self.client.force_authenticate(user=None)
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
