@@ -32,7 +32,12 @@ class RecipeSuggestionView(APIView):
         },
         examples=[
             OpenApiExample(
-                "Recipe suggestion request",
+                "Auto-fetch from fridge (recommended)",
+                value={},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Manual ingredient override",
                 value={"ingredients": ["eggs", "tomatoes", "cheese"]},
                 request_only=True,
             ),
@@ -42,8 +47,12 @@ class RecipeSuggestionView(APIView):
         serializer = RecipeSuggestionRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        ingredients = serializer.validated_data["ingredients"]
-        task = generate_recipe_suggestions_task.delay(ingredients)
+        # If the client didn't provide an explicit ingredient list, pass
+        # None so the Celery task knows to fetch the user's fridge
+        # contents from the database instead.
+        ingredients = serializer.validated_data.get("ingredients") or None
+
+        task = generate_recipe_suggestions_task.delay(request.user.id, ingredients)
 
         return Response(
             {
