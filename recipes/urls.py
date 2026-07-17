@@ -4,6 +4,7 @@ from recipes.views import (
     RecipeGenerateView,
     RecipeSuggestionTaskStatusView,
     RecipeSuggestionView,
+    SavedRecipeDetailView,
     SavedRecipeListView,
     SaveRecipeView,
 )
@@ -20,4 +21,9 @@ urlpatterns = [
     path("generate/", RecipeGenerateView.as_view(), name="recipe-generate"),
     path("save/", SaveRecipeView.as_view(), name="recipe-save"),
     path("saved/", SavedRecipeListView.as_view(), name="recipe-saved-list"),
+    path(
+        "saved/<int:id>/",
+        SavedRecipeDetailView.as_view(),
+        name="recipe-saved-detail",
+    ),
 ]

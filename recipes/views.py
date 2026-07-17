@@ -317,3 +317,41 @@ class SavedRecipeListView(APIView):
             _serialize_saved_recipe(saved.recipe) for saved in saved_recipes
         ]
         return Response(data, status=status.HTTP_200_OK)
+
+
+class SavedRecipeDetailView(APIView):
+    """
+    DELETE /api/recipes/saved/<id>/ (SFA-367)
+
+    Allows an authenticated user to unsave/remove a recipe from their
+    favourites. <id> refers to the SavedRecipe row's id (not the
+    underlying Recipe's id).
+
+    Object-level permission (SFA-368): the queryset is filtered by both
+    id AND the requesting user, so a SavedRecipe belonging to another
+    user is indistinguishable from one that doesn't exist at all - both
+    correctly return 404, without leaking whether the id exists for
+    someone else.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        responses={
+            204: OpenApiResponse(description="Recipe removed from favourites."),
+            404: OpenApiResponse(
+                description="Saved recipe not found (or belongs to another user).",
+            ),
+        },
+    )
+    def delete(self, request, id):
+        try:
+            saved = SavedRecipe.objects.get(id=id, user=request.user)
+        except SavedRecipe.DoesNotExist:
+            return Response(
+                {"detail": "Saved recipe not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        saved.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
