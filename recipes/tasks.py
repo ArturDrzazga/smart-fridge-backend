@@ -15,9 +15,6 @@ logger = logging.getLogger("django")
     bind=True,
     max_retries=3,
     default_retry_delay=5,
-    retry_backoff=True,
-    retry_backoff_max=60,
-    autoretry_for=(Exception,),
 )
 def generate_recipe_task(self, user_id, ingredients):
     logger.info(f"Starting recipe generation task for user {user_id}")
@@ -44,7 +41,19 @@ def generate_recipe_task(self, user_id, ingredients):
         if self.request.retries >= self.max_retries:
             raise GeminiTimeoutError()
 
-        raise self.retry(exc=exc)
+        # Exponential backoff computed explicitly (5s, 10s, 20s, capped
+        # at 60s). retry_backoff=True only applies automatically when
+        # Celery's autoretry_for triggers the retry - it has no effect
+        # on an explicit self.retry() call made from inside a manual
+        # try/except, which is what we do here. We also no longer use
+        # autoretry_for, since combining it with a manual retry caused
+        # Celery to attempt to auto-retry GeminiTimeoutError itself,
+        # even though that's meant to be the final, non-retryable error
+        # raised once max_retries is exhausted.
+        backoff_seconds = min(5 * (2 ** self.request.retries), 60)
+        raise self.retry(exc=exc, countdown=backoff_seconds)
+
+
 def _get_user_fridge_ingredients(user_id):
     """
     Fetch the given user's fridge/freezer contents from the database,
