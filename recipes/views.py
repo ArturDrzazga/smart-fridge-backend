@@ -22,6 +22,7 @@ from recipes.services.rate_limit import (
     DAILY_RECIPE_GENERATION_LIMIT,
     check_and_increment_daily_limit,
 )
+from recipes.services.task_registry import get_task_owner, register_task
 from recipes.tasks import generate_recipe_suggestions_task, generate_recipe_task
 
 logger = logging.getLogger("django")
@@ -90,6 +91,12 @@ class RecipeSuggestionView(APIView):
             logger.error(f"Failed to queue Celery task: {str(exc)}")
             raise GeminiTimeoutError()
 
+        # Record who submitted this task, so the status endpoint can
+        # tell "never existed" apart from "still pending" (Celery can't
+        # do this on its own), and can refuse to show this task's
+        # result to a different user.
+        register_task(task.id, user_id)
+
         return Response(
             {
                 "task_id": task.id,
@@ -101,15 +108,37 @@ class RecipeSuggestionView(APIView):
 
 
 class RecipeSuggestionTaskStatusView(APIView):
+    """
+    GET /api/recipes/suggestions/<task_id>/
+
+    Only returns a task's status/result to the same user who submitted
+    it (tracked via recipes.services.task_registry). A task_id that was
+    never issued, has expired from the registry, or belongs to a
+    different user all return an identical 404 - this endpoint never
+    reveals which of those is the case.
+    """
+
+    permission_classes = [IsAuthenticated]
+
     @extend_schema(
         responses={
             200: OpenApiResponse(
                 response=RecipeSuggestionTaskStatusResponseSerializer,
                 description="Recipe suggestion task status fetched successfully.",
             ),
+            404: OpenApiResponse(
+                description="Task not found (or belongs to another user).",
+            ),
         }
     )
     def get(self, request, task_id):
+        owner = get_task_owner(task_id)
+        if owner is None or owner != str(request.user.id):
+            return Response(
+                {"detail": "Task not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
         task_result = AsyncResult(task_id)
 
         response_data = {

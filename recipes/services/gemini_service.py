@@ -11,7 +11,7 @@ def _get_client():
 
 
 def _get_model():
-    return os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    return os.getenv("GEMINI_MODEL", "gemini-flash-latest")
 
 
 def test_gemini_connection():
