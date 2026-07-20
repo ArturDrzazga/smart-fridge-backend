@@ -13,8 +13,10 @@ logger = logging.getLogger("django")
 
 @shared_task(
     bind=True,
-    max_retries=1,
+    max_retries=3,
     default_retry_delay=5,
+    retry_backoff=True,
+    retry_backoff_max=60,
     autoretry_for=(Exception,),
 )
 def generate_recipe_task(self, user_id, ingredients):
