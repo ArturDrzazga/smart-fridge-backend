@@ -1,5 +1,5 @@
 from django_filters.rest_framework import DjangoFilterBackend
-from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
+from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view, OpenApiExample
 from rest_framework import filters, viewsets
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -14,13 +14,14 @@ from fridge.serializers import ProductSerializer
                 "operational status of the fridge module.",
     responses={
         200: OpenApiResponse(
+            response=dict,
             description="Service is healthy and running.",
             examples=[
-                {
-                    "summary": "Success",
-                    "value": {"status": "OK", "message": "Hello World"}
-                }
-            ]
+                OpenApiExample(
+                    name="HealthCheckSuccess",
+                    value={"status": "OK", "message": "Hello World"},
+                )
+            ],
         )
     }
 )
