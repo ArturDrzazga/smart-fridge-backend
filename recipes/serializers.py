@@ -15,6 +15,7 @@ class RecipeSuggestionRequestSerializer(serializers.Serializer):
 
 
 class RecipeGenerateItemSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
     title = serializers.CharField()
     ingredients = serializers.ListField(child=serializers.CharField())
     steps = serializers.ListField(child=serializers.CharField())
