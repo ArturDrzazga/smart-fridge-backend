@@ -1,4 +1,4 @@
-from drf_spectacular.utils import OpenApiResponse, extend_schema
+from drf_spectacular.utils import OpenApiResponse, extend_schema, OpenApiExample
 from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -43,17 +43,18 @@ class RegisterView(APIView):
     request=LoginSerializer,
     responses={
         200: OpenApiResponse(
+            response=dict,
             description="Successfully authenticated. "
                         "Returns access and refresh JWT tokens.",
             examples=[
-                {
-                    "summary": "JWT Token Pair",
-                    "value": {
+                OpenApiExample(
+                    name="JWTTokenPairExample",
+                    value={
                         "refresh": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                        "access": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                    }
-                }
-            ]
+                        "access": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                    },
+                )
+            ],
         ),
         400: OpenApiResponse(
             description="Invalid credentials or bad request format."
@@ -77,16 +78,18 @@ class LoginView(TokenObtainPairView):
     tags=["Authentication"],
     responses={
         200: OpenApiResponse(
+            response=dict,
             description="Token verified successfully.",
             examples=[
-                {
-                    "summary": "Success",
-                    "value": {
+                OpenApiExample(
+                    name="ProtectedTestSuccessExample",
+                    summary="Success",
+                    value={
                         "message": "JWT works",
-                        "user": "user@example.com"
-                    }
-                }
-            ]
+                        "user": "user@example.com",
+                    },
+                )
+            ],
         ),
         401: OpenApiResponse(
             description="Authentication credentials "
