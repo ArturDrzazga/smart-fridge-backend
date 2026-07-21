@@ -1,4 +1,4 @@
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -15,10 +15,18 @@ from users.serializers import (
 @extend_schema(
     tags=["Authentication"],
     request=RegisterSerializer,
-    responses={201: UserRegistrationResponseSerializer},
+    responses={
+        201: UserRegistrationResponseSerializer,
+        400: OpenApiResponse(
+            description="Validation error / email already exists."
+        ),
+    },
     description="Register a new user using email and password.",
 )
 class RegisterView(APIView):
+    """
+        API view for registering new users in the system.
+    """
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
@@ -34,17 +42,33 @@ class RegisterView(APIView):
     tags=["Authentication"],
     request=LoginSerializer,
     responses={
-        200: {
-            "type": "object",
-            "properties": {
-                "refresh": {"type": "string"},
-                "access": {"type": "string"},
-            },
-        }
+        200: OpenApiResponse(
+            description="Successfully authenticated. "
+                        "Returns access and refresh JWT tokens.",
+            examples=[
+                {
+                    "summary": "JWT Token Pair",
+                    "value": {
+                        "refresh": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                        "access": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                    }
+                }
+            ]
+        ),
+        400: OpenApiResponse(
+            description="Invalid credentials or bad request format."
+        ),
+        401: OpenApiResponse(
+            description="Authentication failed (e.g. inactive account)."
+        )
     },
-    description="Authenticate user with email and password and return JWT tokens.",
+    description="Authenticate user with email "
+                "and password and return JWT access/refresh tokens.",
 )
 class LoginView(TokenObtainPairView):
+    """
+        API view for user login. Returns JWT access and refresh tokens.
+    """
     permission_classes = [permissions.AllowAny]
     serializer_class = LoginSerializer
 
@@ -52,17 +76,30 @@ class LoginView(TokenObtainPairView):
 @extend_schema(
     tags=["Authentication"],
     responses={
-        200: {
-            "type": "object",
-            "properties": {
-                "message": {"type": "string"},
-                "user": {"type": "string"},
-            },
-        }
+        200: OpenApiResponse(
+            description="Token verified successfully.",
+            examples=[
+                {
+                    "summary": "Success",
+                    "value": {
+                        "message": "JWT works",
+                        "user": "user@example.com"
+                    }
+                }
+            ]
+        ),
+        401: OpenApiResponse(
+            description="Authentication credentials "
+                        "were not provided or are invalid."
+        ),
     },
-    description="Protected test endpoint. Requires valid JWT access token.",
+    description="Protected test endpoint. "
+                "Requires a valid JWT access token in the Authorization header.",
 )
 class ProtectedTestView(APIView):
+    """
+        API view to verify JWT token authentication functionality.
+    """
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
@@ -76,11 +113,22 @@ class ProtectedTestView(APIView):
 
 
 class UserProfileView(APIView):
+    """
+        API view to retrieve details of the currently authenticated user.
+    """
     permission_classes = [permissions.IsAuthenticated]
 
     @extend_schema(
-        responses={200: UserProfileSerializer},
-        description="Returns id, email, and registration date",
+        tags=["Authentication"],
+        responses={
+            200: UserProfileSerializer,
+            401: OpenApiResponse(
+                description="Authentication credentials "
+                            "were not provided or are invalid."
+            ),
+        },
+        description="Returns details (id, email, date joined) "
+                    "for the currently authenticated user.",
     )
     def get(self, request):
         serializer = UserProfileSerializer(request.user)
