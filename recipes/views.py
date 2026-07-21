@@ -27,6 +27,8 @@ from recipes.tasks import generate_recipe_suggestions_task, generate_recipe_task
 
 logger = logging.getLogger("django")
 
+STEPS_SEPARATOR = "\n"
+
 
 class RecipeSuggestionQueuedResponseSerializer(serializers.Serializer):
     task_id = serializers.CharField()
@@ -43,11 +45,18 @@ class RecipeSuggestionTaskStatusResponseSerializer(serializers.Serializer):
 
 class RecipeSuggestionView(APIView):
     @extend_schema(
+        tags=["Recipes"],
         request=RecipeSuggestionRequestSerializer,
         responses={
             202: OpenApiResponse(
                 response=RecipeSuggestionQueuedResponseSerializer,
                 description="Recipe suggestion task queued successfully.",
+            ),
+            429: OpenApiResponse(
+                description="Daily request limit reached for this user/IP.",
+            ),
+            503: OpenApiResponse(
+                description="Failed to queue the task (Gemini/Celery unavailable).",
             ),
         },
         examples=[
@@ -60,6 +69,15 @@ class RecipeSuggestionView(APIView):
                 "Manual ingredient override",
                 value={"ingredients": ["eggs", "tomatoes", "cheese"]},
                 request_only=True,
+            ),
+            OpenApiExample(
+                "Queued response",
+                value={
+                    "task_id": "bd56719b-9b55-4754-8b22-42b460314d84",
+                    "status": "PENDING",
+                    "message": "Recipe suggestion task queued successfully.",
+                },
+                response_only=True,
             ),
         ],
     )
@@ -121,6 +139,7 @@ class RecipeSuggestionTaskStatusView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
+        tags=["Recipes"],
         responses={
             200: OpenApiResponse(
                 response=RecipeSuggestionTaskStatusResponseSerializer,
@@ -129,7 +148,18 @@ class RecipeSuggestionTaskStatusView(APIView):
             404: OpenApiResponse(
                 description="Task not found (or belongs to another user).",
             ),
-        }
+        },
+        examples=[
+            OpenApiExample(
+                "Task still processing",
+                value={
+                    "task_id": "bd56719b-9b55-4754-8b22-42b460314d84",
+                    "status": "PENDING",
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def get(self, request, task_id):
         owner = get_task_owner(task_id)
@@ -175,6 +205,26 @@ def _map_to_generate_schema(gemini_result):
     return {"recipes": recipes}
 
 
+def _persist_generated_recipes(mapped_result):
+    """
+    Saves each generated recipe as a Recipe row in the database, and
+    adds the resulting id to each recipe dict in-place.
+
+    This is what makes POST /api/recipes/save/ usable right after
+    POST /api/recipes/generate/: without persisting here, generated
+    recipes had no id at all, so there was no legitimate recipe_id a
+    client could ever pass to /save/ (reported by Oleksandr).
+    """
+    for recipe in mapped_result["recipes"]:
+        recipe_obj = Recipe.objects.create(
+            title=recipe["title"],
+            ingredients=recipe["ingredients"],
+            steps=STEPS_SEPARATOR.join(recipe["steps"]),
+        )
+        recipe["id"] = recipe_obj.id
+    return mapped_result
+
+
 class RecipeGenerateView(APIView):
     """
     Core AI recipe generation endpoint (SFA-426).
@@ -185,11 +235,16 @@ class RecipeGenerateView(APIView):
     POST /api/recipes/suggestions/, this endpoint waits (up to 60s) for
     the task result and responds synchronously with status 200, so
     frontend clients don't need to poll a separate status endpoint.
+
+    Each generated recipe is also persisted as a Recipe row, and its id
+    is included in the response, so it can immediately be passed to
+    POST /api/recipes/save/ to bookmark it.
     """
 
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
+        tags=["Recipes"],
         request=None,
         responses={
             200: OpenApiResponse(
@@ -206,6 +261,44 @@ class RecipeGenerateView(APIView):
                 description="Gemini API is currently unavailable or timed out.",
             ),
         },
+        examples=[
+            OpenApiExample(
+                "Example response",
+                value={
+                    "recipes": [
+                        {
+                            "id": 42,
+                            "title": "Classic Fluffy Scrambled Eggs",
+                            "ingredients": ["eggs", "butter", "salt", "black pepper"],
+                            "steps": [
+                                "Crack the eggs into a bowl and whisk until combined.",
+                                "Melt butter in a non-stick skillet over medium-low heat.",
+                                "Pour in the eggs and gently stir until softly set.",
+                                "Season with salt and pepper, and serve immediately.",
+                            ],
+                        }
+                    ]
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            OpenApiExample(
+                "Daily limit reached",
+                value={
+                    "detail": "Daily request limit reached (5 per day). Please try again tomorrow."
+                },
+                response_only=True,
+                status_codes=["429"],
+            ),
+            OpenApiExample(
+                "Gemini unavailable",
+                value={
+                    "detail": "Recipe generation service is currently unavailable. Please try again later."
+                },
+                response_only=True,
+                status_codes=["503"],
+            ),
+        ],
     )
     def post(self, request):
         allowed = check_and_increment_daily_limit(request.user.id)
@@ -241,12 +334,13 @@ class RecipeGenerateView(APIView):
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
-        return Response(_map_to_generate_schema(result), status=status.HTTP_200_OK)
+        mapped = _map_to_generate_schema(result)
+        mapped = _persist_generated_recipes(mapped)
+
+        return Response(mapped, status=status.HTTP_200_OK)
 
 
 # --- Saved recipes ---------------------------------------------------
-
-STEPS_SEPARATOR = "\n"
 
 
 def _serialize_saved_recipe(recipe):
@@ -273,6 +367,7 @@ class SaveRecipeView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
+        tags=["Recipes"],
         request=RecipeSaveRequestSerializer,
         responses={
             201: OpenApiResponse(
@@ -284,6 +379,31 @@ class SaveRecipeView(APIView):
             ),
             404: OpenApiResponse(description="Recipe not found."),
         },
+        examples=[
+            OpenApiExample(
+                "Request",
+                value={"recipe_id": 1},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Saved successfully",
+                value={"id": 5, "user_id": 2, "recipe_id": 1},
+                response_only=True,
+                status_codes=["201"],
+            ),
+            OpenApiExample(
+                "Already saved",
+                value={"detail": "This recipe is already saved to your favourites."},
+                response_only=True,
+                status_codes=["400"],
+            ),
+            OpenApiExample(
+                "Recipe not found",
+                value={"detail": "Recipe not found."},
+                response_only=True,
+                status_codes=["404"],
+            ),
+        ],
     )
     def post(self, request):
         serializer = RecipeSaveRequestSerializer(data=request.data)
@@ -329,12 +449,38 @@ class SavedRecipeListView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
+        tags=["Recipes"],
         responses={
             200: OpenApiResponse(
                 response=SavedRecipeResponseSerializer(many=True),
                 description="List of the authenticated user's saved recipes.",
             ),
         },
+        examples=[
+            OpenApiExample(
+                "Example response",
+                value=[
+                    {
+                        "id": 1,
+                        "title": "Cheesy Tomato Omelette",
+                        "ingredients": ["eggs", "tomatoes", "cheese"],
+                        "steps": [
+                            "Whisk eggs with a pinch of salt and pepper.",
+                            "Pour into a hot, buttered pan.",
+                        ],
+                        "created_at": "2026-07-16T18:31:27.995668Z",
+                    }
+                ],
+                response_only=True,
+                status_codes=["200"],
+            ),
+            OpenApiExample(
+                "No saved recipes",
+                value=[],
+                response_only=True,
+                status_codes=["200"],
+            ),
+        ],
     )
     def get(self, request):
         saved_recipes = (
@@ -366,12 +512,21 @@ class SavedRecipeDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
+        tags=["Recipes"],
         responses={
             204: OpenApiResponse(description="Recipe removed from favourites."),
             404: OpenApiResponse(
                 description="Saved recipe not found (or belongs to another user).",
             ),
         },
+        examples=[
+            OpenApiExample(
+                "Not found",
+                value={"detail": "Saved recipe not found."},
+                response_only=True,
+                status_codes=["404"],
+            ),
+        ],
     )
     def delete(self, request, id):
         try:
