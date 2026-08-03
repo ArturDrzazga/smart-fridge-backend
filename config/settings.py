@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "drf_spectacular",
     "rest_framework_simplejwt",
+    "corsheaders",
     "fridge",
     "users",
     "recipes",
@@ -54,6 +55,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -172,3 +174,20 @@ CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
+
+# CORS
+# https://github.com/adamchainz/django-cors-headers
+#
+# Allows the Angular frontend (running separately, default port 4200)
+# to make requests to this API. Configurable via .env so other origins
+# (e.g. a deployed frontend URL later on) can be added without a code
+# change - comma-separated, matching the ALLOWED_HOSTS pattern above.
+CORS_ALLOWED_ORIGINS = os.getenv(
+    "CORS_ALLOWED_ORIGINS", "http://localhost:4200"
+).split(",")
+
+# The frontend needs to send the JWT in the Authorization header, and
+# read it back from responses - this is on by default for simple
+# requests, but explicit here for clarity since we use a custom scheme
+# (Bearer tokens, not cookies), so CORS_ALLOW_CREDENTIALS is not needed.
+CORS_ALLOW_CREDENTIALS = False
