@@ -12,7 +12,7 @@ Backend REST API for the Smart Fridge Assistant application built with Django, D
 * **API Documentation:** `drf-spectacular` (OpenAPI 3.0 & Swagger UI)
 * **Asynchronous Tasks:** Celery 5.6 & Redis 8.0
 * **AI Integration:** Google GenAI SDK (`google-genai` 1.28)
-* **Filtering & Utilities:** `django-filter`, `python-dotenv`
+* **Filtering & Utilities:** `django-filter`, `python-dotenv`, `django-cors-headers`
 * **Code Quality & Testing:** `ruff`, `pytest`, `pytest-django`
 
 ---
@@ -77,8 +77,10 @@ The application relies on the following environment variables (defined in .env /
 | `DB_HOST` | PostgreSQL host address |
 | `DB_PORT` | PostgreSQL port |
 | `GEMINI_API_KEY` | API key for Google Gemini AI integration |
+| `GEMINI_MODEL` | Gemini model to use (e.g. `gemini-3.1-flash-lite`) |
 | `REDIS_URL` | Redis connection URL |
 | `CELERY_BROKER_URL` | Celery broker URL (typically points to Redis) |
+| `CORS_ALLOWED_ORIGINS` | Comma-separated list of frontend origins allowed to call this API (defaults to `http://localhost:4200`) |
 
 ---
 
@@ -129,3 +131,14 @@ Interactive API documentation and schema testing are available via Swagger UI at
 | `DELETE` | `/api/recipes/saved/{id}/` | Remove a saved recipe |
 | `POST` | `/api/recipes/suggestions/` | Request asynchronous recipe suggestions |
 | `GET` | `/api/recipes/suggestions/{task_id}/` | Check the status or result of an async recipe generation task |
+
+---
+
+## 🌐 Frontend Integration
+
+If you're building a separate frontend app (e.g. Angular) that consumes this API:
+
+* **Swagger UI:** once the backend is running, browse all endpoints and try them out at `http://localhost:8000/api/docs/`
+* **CORS:** requests from `http://localhost:4200` (Angular's default dev server port) are allowed out of the box. To allow a different origin, set `CORS_ALLOWED_ORIGINS` in your `.env` (comma-separated for multiple origins)
+* **Postman collection:** an exported collection with example requests for every endpoint is available — ask a backend team member for the latest export
+* **Authentication:** obtain a JWT via `POST /api/auth/login/`, then send it on subsequent requests as `Authorization: Bearer <access_token>`
