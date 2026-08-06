@@ -134,6 +134,126 @@ Interactive API documentation and schema testing are available via Swagger UI at
 
 ---
 
+## 🤖 AI Recipe Generation — Detailed Guide
+
+This section documents the AI recipe generation flow in detail, for developers integrating against it and for evaluators reviewing the implementation.
+
+### Overview
+
+The typical flow is: **generate → save → get → delete**.
+
+1. Call `POST /api/recipes/generate/` to get AI-generated recipe suggestions based on the user's current fridge contents.
+2. Optionally call `POST /api/recipes/save/` with the `id` of a recipe from the generate response, to bookmark it.
+3. Call `GET /api/recipes/saved/` to list bookmarked recipes.
+4. Call `DELETE /api/recipes/saved/{id}/` to remove a bookmark.
+
+### Gemini API setup
+
+1. Get a free API key from [Google AI Studio](https://aistudio.google.com/apikey).
+2. Set it in your `.env` file:
+   ```
+   GEMINI_API_KEY=your-key-here
+   GEMINI_MODEL=gemini-3.1-flash-lite
+   ```
+   `gemini-3.1-flash-lite` is recommended for local development — it currently has the highest free-tier rate limit among Gemini models. `gemini-flash-latest` is also supported and always points to the current recommended stable model, but has a lower free-tier quota.
+3. Restart the containers (or the dev server) after changing `.env` so the new key is picked up:
+   ```bash
+   docker-compose down && docker-compose up --build
+   ```
+4. Google's free tier enforces its own requests-per-minute and requests-per-day limits, independent of this API's own daily limit described below. If you see `503` errors under heavy local testing, this is usually Google's free tier being temporarily overloaded — the backend automatically retries with an increasing delay before giving up.
+
+### `POST /api/recipes/generate/`
+
+Fetches the authenticated user's current fridge contents, generates recipe suggestions via Gemini, and — unlike `/api/recipes/suggestions/` — waits for the result and returns it synchronously (up to 60 seconds), instead of requiring the client to poll a task status endpoint. Each generated recipe is also saved to the database, and its `id` is included in the response so it can immediately be passed to `/api/recipes/save/`.
+
+**Request:** no body required. Requires `Authorization: Bearer <access_token>`.
+
+**Example response — `200 OK`:**
+```json
+{
+  "recipes": [
+    {
+      "id": 42,
+      "title": "Classic Fluffy Scrambled Eggs",
+      "ingredients": ["eggs", "butter", "salt", "black pepper"],
+      "steps": [
+        "Crack the eggs into a bowl and whisk until combined.",
+        "Melt butter in a non-stick skillet over medium-low heat.",
+        "Pour in the eggs and gently stir until softly set.",
+        "Season with salt and pepper, and serve immediately."
+      ]
+    }
+  ]
+}
+```
+
+#### Daily limit behavior
+
+This endpoint enforces a **daily limit of 5 requests per user**, separate from Gemini's own free-tier quota, to keep API usage predictable across the team while testing.
+
+* The counter is tracked per user, per calendar day, in Redis, and resets automatically at midnight.
+* On the 6th request of the day, the endpoint returns `429 Too Many Requests`:
+  ```json
+  {
+    "detail": "Daily request limit reached (5 per day). Please try again tomorrow."
+  }
+  ```
+* If Gemini itself is unavailable (after automatic retries) or the request times out, the endpoint returns `503 Service Unavailable`:
+  ```json
+  {
+    "detail": "Recipe generation service is currently unavailable. Please try again later."
+  }
+  ```
+
+### `POST /api/recipes/save/`
+
+Saves an existing recipe (by `id`, typically one just returned by `/generate/`) to the authenticated user's favourites.
+
+**Request:**
+```json
+{
+  "recipe_id": 42
+}
+```
+
+**Response — `201 Created`:**
+```json
+{
+  "id": 5,
+  "user_id": 2,
+  "recipe_id": 42
+}
+```
+
+Other responses: `400 Bad Request` if this recipe is already saved by the user; `404 Not Found` if `recipe_id` doesn't exist.
+
+### `GET /api/recipes/saved/`
+
+Returns all recipes saved by the authenticated user, with full details.
+
+**Response — `200 OK`:**
+```json
+[
+  {
+    "id": 42,
+    "title": "Classic Fluffy Scrambled Eggs",
+    "ingredients": ["eggs", "butter", "salt", "black pepper"],
+    "steps": ["Crack the eggs into a bowl and whisk until combined.", "..."],
+    "created_at": "2026-07-21T21:13:10.488260Z"
+  }
+]
+```
+
+Returns an empty array `[]` if the user has no saved recipes.
+
+### `DELETE /api/recipes/saved/{id}/`
+
+Removes a saved recipe (unbookmarks it). `{id}` is the *saved recipe's* id (from the `id` field returned by `/save/` or `/saved/`).
+
+**Response:** `204 No Content` on success. `404 Not Found` if the saved recipe doesn't exist, or belongs to a different user (both cases return an identical 404, so a client can't distinguish "not found" from "not yours").
+
+---
+
 ## 🌐 Frontend Integration
 
 If you're building a separate frontend app (e.g. Angular) that consumes this API:
