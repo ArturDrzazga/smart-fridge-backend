@@ -317,7 +317,7 @@ class RecipeGenerateView(APIView):
         task = generate_recipe_suggestions_task.delay(request.user.id, None)
 
         try:
-            result = task.get(timeout=60)
+            result = task.get(timeout=120)
         except CeleryTimeoutError:
             return Response(
                 {"detail": "Recipe generation timed out. Please try again later."},
