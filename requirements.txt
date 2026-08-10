@@ -35,3 +35,4 @@ google-genai==1.28.0
 django-filter==25.2
 pytest
 pytest-django
+gunicorn
