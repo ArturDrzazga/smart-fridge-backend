@@ -36,3 +36,4 @@ django-filter==25.2
 pytest
 pytest-django
 gunicorn
+whitenoise
