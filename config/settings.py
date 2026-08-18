@@ -193,6 +193,18 @@ if CELERY_BROKER_URL.startswith("rediss://"):
 if CELERY_RESULT_BACKEND.startswith("rediss://"):
     CELERY_REDIS_BACKEND_USE_SSL = {"ssl_cert_reqs": ssl.CERT_NONE}
 
+# Reduces how often Celery polls Redis for new tasks when the queue is
+# idle, and disables extra event traffic we don't use (no Flower/task
+# monitoring set up) - both cut down on the number of Redis commands
+# consumed, which matters on Upstash's free-tier monthly command quota
+# (500K/month - we've already hit this limit once from a worker that
+# was kept artificially awake and polling non-stop).
+CELERY_BROKER_TRANSPORT_OPTIONS = {
+    "polling_interval": 5.0,  # seconds between polls when queue is empty
+}
+CELERY_WORKER_SEND_TASK_EVENTS = False
+CELERY_TASK_SEND_SENT_EVENT = False
+
 # CORS
 # https://github.com/adamchainz/django-cors-headers
 #
