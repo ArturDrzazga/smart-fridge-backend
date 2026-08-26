@@ -11,6 +11,27 @@ from recipes.services.parser import parse_gemini_response
 
 logger = logging.getLogger("django")
 
+
+def _get_user_fridge_ingredients(user_id):
+    """
+    Fetch the given user's fridge/freezer contents from the database,
+    formatted for build_recipe_prompt() (name + expiry_date), sorted
+    soonest-expiring first.
+    """
+    products = (
+        Product.objects.filter(user_id=user_id)
+        .order_by("expiry_date")
+        .values("name", "expiry_date")
+    )
+    return [
+        {
+            "name": product["name"],
+            "expiry_date": product["expiry_date"].isoformat(),
+        }
+        for product in products
+    ]
+
+
 @shared_task(
     bind=True,
     max_retries=3,
@@ -19,6 +40,14 @@ logger = logging.getLogger("django")
 def generate_recipe_task(self, user_id, ingredients):
     logger.info(f"Starting recipe generation task for user {user_id}")
     try:
+        # If the client didn't provide an explicit ingredient list,
+        # fetch the user's fridge contents instead, same as
+        # generate_recipe_suggestions_task does below. Without this,
+        # `ingredients` stayed None, Gemini received a prompt with no
+        # ingredients at all, and always returned an empty recipe list.
+        if not ingredients:
+            ingredients = _get_user_fridge_ingredients(user_id)
+
         raw_data = generate_recipe_suggestions(ingredients)
 
         if isinstance(raw_data, dict):
@@ -52,26 +81,6 @@ def generate_recipe_task(self, user_id, ingredients):
         # raised once max_retries is exhausted.
         backoff_seconds = min(5 * (2 ** self.request.retries), 60)
         raise self.retry(exc=exc, countdown=backoff_seconds)
-
-
-def _get_user_fridge_ingredients(user_id):
-    """
-    Fetch the given user's fridge/freezer contents from the database,
-    formatted for build_recipe_prompt() (name + expiry_date), sorted
-    soonest-expiring first.
-    """
-    products = (
-        Product.objects.filter(user_id=user_id)
-        .order_by("expiry_date")
-        .values("name", "expiry_date")
-    )
-    return [
-        {
-            "name": product["name"],
-            "expiry_date": product["expiry_date"].isoformat(),
-        }
-        for product in products
-    ]
 
 
 @shared_task
