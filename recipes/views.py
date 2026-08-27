@@ -1,7 +1,9 @@
 import logging
+from datetime import timedelta
 
 from celery.exceptions import TimeoutError as CeleryTimeoutError
 from celery.result import AsyncResult
+from django.utils import timezone
 from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema
 from rest_framework import serializers, status
 from rest_framework.permissions import IsAuthenticated
@@ -85,17 +87,16 @@ class RecipeSuggestionView(APIView):
         serializer = RecipeSuggestionRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        user_id = request.user.id \
-            if request.user.is_authenticated \
+        user_id = (
+            request.user.id
+            if request.user.is_authenticated
             else f"anon_{request.META.get('REMOTE_ADDR')}"
+        )
 
         is_allowed, remaining = check_daily_limit(user_id)
         if not is_allowed:
             return Response(
-                {
-                    "error": "Daily limit reached",
-                    "remaining": 0
-                },
+                {"error": "Daily limit reached", "remaining": 0},
                 status=status.HTTP_429_TOO_MANY_REQUESTS,
             )
 
@@ -134,6 +135,10 @@ class RecipeSuggestionTaskStatusView(APIView):
     never issued, has expired from the registry, or belongs to a
     different user all return an identical 404 - this endpoint never
     reveals which of those is the case.
+
+    When the task status is SUCCESS, the generated recipes are automatically
+    persisted to the database on-the-fly and assigned a numeric ID, making
+    them immediately ready for saving via POST /api/recipes/save/.
     """
 
     permission_classes = [IsAuthenticated]
@@ -159,6 +164,33 @@ class RecipeSuggestionTaskStatusView(APIView):
                 response_only=True,
                 status_codes=["200"],
             ),
+            OpenApiExample(
+                "Task completed successfully",
+                value={
+                    "task_id": "bd56719b-9b55-4754-8b22-42b460314d84",
+                    "status": "SUCCESS",
+                    "result": {
+                        "recipes": [
+                            {
+                                "id": 42,
+                                "title": "Classic Fluffy Scrambled Eggs",
+                                "ingredients": [
+                                    "eggs",
+                                    "butter",
+                                    "salt",
+                                    "black pepper",
+                                ],
+                                "steps": [
+                                    "Crack the eggs into a bowl and whisk until combined.",
+                                    "Melt butter in a non-stick skillet over medium-low heat.",
+                                ],
+                            }
+                        ]
+                    },
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
         ],
     )
     def get(self, request, task_id):
@@ -177,7 +209,8 @@ class RecipeSuggestionTaskStatusView(APIView):
         }
 
         if task_result.status == "SUCCESS":
-            response_data["result"] = task_result.result
+            mapped = _map_to_generate_schema(task_result.result)
+            response_data["result"] = _persist_generated_recipes(mapped)
         elif task_result.status == "FAILURE":
             response_data["error"] = str(task_result.result)
 
@@ -186,20 +219,24 @@ class RecipeSuggestionTaskStatusView(APIView):
 
 def _map_to_generate_schema(gemini_result):
     """
-    Maps the internal Gemini result shape
-    (title, ingredients_used, missing_ingredients, instructions, prep_time_minutes)
-    to the simplified schema required by POST /api/recipes/generate/:
-    (title, ingredients, steps).
+    Maps the internal Gemini result shape to the schema required by the API,
+    supporting both standard ('ingredients', 'steps') and alternative keys.
     """
     recipes = []
     for recipe in gemini_result.get("recipes", []):
-        ingredients_used = recipe.get("ingredients_used", [])
-        missing_ingredients = recipe.get("missing_ingredients", [])
+        ingredients = recipe.get("ingredients")
+        if ingredients is None:
+            ingredients_used = recipe.get("ingredients_used", [])
+            missing_ingredients = recipe.get("missing_ingredients", [])
+            ingredients = [*ingredients_used, *missing_ingredients]
+
+        steps = recipe.get("steps") or recipe.get("instructions", [])
+
         recipes.append(
             {
                 "title": recipe.get("title", ""),
-                "ingredients": [*ingredients_used, *missing_ingredients],
-                "steps": recipe.get("instructions", []),
+                "ingredients": ingredients,
+                "steps": steps,
             }
         )
     return {"recipes": recipes}
@@ -208,13 +245,18 @@ def _map_to_generate_schema(gemini_result):
 def _persist_generated_recipes(mapped_result):
     """
     Saves each generated recipe as a Recipe row in the database, and
-    adds the resulting id to each recipe dict in-place.
+    adds the resulting id to each recipe dict in-place. Also cleans up
+    unassigned orphaned recipes older than 24 hours to prevent table bloat.
 
     This is what makes POST /api/recipes/save/ usable right after
     POST /api/recipes/generate/: without persisting here, generated
     recipes had no id at all, so there was no legitimate recipe_id a
     client could ever pass to /save/ (reported by Oleksandr).
     """
+
+    threshold = timezone.now() - timedelta(hours=24)
+    Recipe.objects.filter(recipes__isnull=True, created_at__lt=threshold).delete()
+
     for recipe in mapped_result["recipes"]:
         recipe_obj = Recipe.objects.create(
             title=recipe["title"],
@@ -488,9 +530,7 @@ class SavedRecipeListView(APIView):
             .select_related("recipe")
             .order_by("-recipe__created_at")
         )
-        data = [
-            _serialize_saved_recipe(saved.recipe) for saved in saved_recipes
-        ]
+        data = [_serialize_saved_recipe(saved.recipe) for saved in saved_recipes]
         return Response(data, status=status.HTTP_200_OK)
 
 
