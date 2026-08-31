@@ -40,9 +40,16 @@ Rules:
   "expires in N day(s)" below), to help reduce food waste
 - If the ingredient list is empty, return {{"recipes": []}} and do not invent
   ingredients or recipes
+- Only use ingredients explicitly listed above in "ingredients_used". Never
+  add proteins (meat, fish, eggs, tofu), dairy, vegetables, fruits, or any
+  other perishable ingredient that was not explicitly listed, even if the
+  recipe would be more interesting with it
+- "missing_ingredients" may only contain basic pantry staples: salt, pepper,
+  oil, water, sugar, flour, butter. Do not put any perishable or specialty
+  ingredient in "missing_ingredients"
 - If only one ingredient is provided, suggest simple recipes built primarily
-  around that single ingredient, using common pantry staples (salt, pepper,
-  oil, water) as needed
+  around that single ingredient, using only the pantry staples listed above
+  as needed
 """
 
 
