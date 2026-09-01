@@ -1,6 +1,7 @@
 from django.urls import path
 
 from recipes.views import (
+    RecipeDetailView,
     RecipeGenerateView,
     RecipeSuggestionTaskStatusView,
     RecipeSuggestionView,
@@ -26,4 +27,5 @@ urlpatterns = [
         SavedRecipeDetailView.as_view(),
         name="recipe-saved-detail",
     ),
+    path("<int:id>/", RecipeDetailView.as_view(), name="recipe-detail"),
 ]

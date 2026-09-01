@@ -19,6 +19,7 @@ class RecipeGenerateItemSerializer(serializers.Serializer):
     title = serializers.CharField()
     ingredients = serializers.ListField(child=serializers.CharField())
     steps = serializers.ListField(child=serializers.CharField())
+    prep_time_minutes = serializers.IntegerField(required=False, allow_null=True)
 
 
 class RecipeGenerateResponseSerializer(serializers.Serializer):
@@ -40,9 +41,13 @@ class SavedRecipeCreateResponseSerializer(serializers.Serializer):
 
 
 class SavedRecipeResponseSerializer(serializers.Serializer):
-    """Full recipe details, used by GET /api/recipes/saved/."""
+    """
+    Full recipe details, used by GET /api/recipes/saved/ and
+    GET /api/recipes/<id>/.
+    """
     id = serializers.IntegerField()
     title = serializers.CharField()
     ingredients = serializers.ListField(child=serializers.CharField())
     steps = serializers.ListField(child=serializers.CharField())
+    prep_time_minutes = serializers.IntegerField(required=False, allow_null=True)
     created_at = serializers.DateTimeField()
