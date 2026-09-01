@@ -184,6 +184,7 @@ class RecipeSuggestionTaskStatusView(APIView):
                                     "Crack the eggs into a bowl and whisk until combined.",
                                     "Melt butter in a non-stick skillet over medium-low heat.",
                                 ],
+                                "prep_time_minutes": 10,
                             }
                         ]
                     },
@@ -237,6 +238,7 @@ def _map_to_generate_schema(gemini_result):
                 "title": recipe.get("title", ""),
                 "ingredients": ingredients,
                 "steps": steps,
+                "prep_time_minutes": recipe.get("prep_time_minutes"),
             }
         )
     return {"recipes": recipes}
@@ -262,6 +264,7 @@ def _persist_generated_recipes(mapped_result):
             title=recipe["title"],
             ingredients=recipe["ingredients"],
             steps=STEPS_SEPARATOR.join(recipe["steps"]),
+            prep_time_minutes=recipe.get("prep_time_minutes"),
         )
         recipe["id"] = recipe_obj.id
     return mapped_result
@@ -318,6 +321,7 @@ class RecipeGenerateView(APIView):
                                 "Pour in the eggs and gently stir until softly set.",
                                 "Season with salt and pepper, and serve immediately.",
                             ],
+                            "prep_time_minutes": 10,
                         }
                     ]
                 },
@@ -394,6 +398,7 @@ def _serialize_saved_recipe(recipe):
         "title": recipe.title,
         "ingredients": recipe.ingredients or [],
         "steps": steps,
+        "prep_time_minutes": recipe.prep_time_minutes,
         "created_at": recipe.created_at,
     }
 
@@ -510,6 +515,7 @@ class SavedRecipeListView(APIView):
                             "Whisk eggs with a pinch of salt and pepper.",
                             "Pour into a hot, buttered pan.",
                         ],
+                        "prep_time_minutes": 15,
                         "created_at": "2026-07-16T18:31:27.995668Z",
                     }
                 ],
@@ -579,3 +585,48 @@ class SavedRecipeDetailView(APIView):
 
         saved.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class RecipeDetailView(APIView):
+    """
+    GET /api/recipes/<id>/
+
+    Returns full details for a single recipe by its Recipe id (not a
+    SavedRecipe id). Used by the Recipe Details screen on the frontend.
+
+    Any authenticated user can view any recipe by id: recipes generated
+    via /generate/ or /suggestions/ aren't owned by a specific user
+    until saved, so there's no ownership check here - ownership only
+    applies to the saved bookmark itself (see SavedRecipeDetailView).
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        tags=["Recipes"],
+        responses={
+            200: OpenApiResponse(
+                response=SavedRecipeResponseSerializer,
+                description="Recipe details fetched successfully.",
+            ),
+            404: OpenApiResponse(description="Recipe not found."),
+        },
+        examples=[
+            OpenApiExample(
+                "Not found",
+                value={"detail": "Recipe not found."},
+                response_only=True,
+                status_codes=["404"],
+            ),
+        ],
+    )
+    def get(self, request, id):
+        try:
+            recipe = Recipe.objects.get(id=id)
+        except Recipe.DoesNotExist:
+            return Response(
+                {"detail": "Recipe not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        return Response(_serialize_saved_recipe(recipe), status=status.HTTP_200_OK)
