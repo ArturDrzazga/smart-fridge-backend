@@ -14,12 +14,29 @@ class RecipeSuggestionRequestSerializer(serializers.Serializer):
     )
 
 
+class RecipeImageSerializer(serializers.Serializer):
+    """
+    Unsplash photo data. Required attribution fields (photographer_name,
+    photographer_url, unsplash_url) must be displayed by the frontend
+    wherever the image is shown, per Unsplash's API guidelines.
+    """
+    url = serializers.URLField(allow_null=True)
+    unsplash_url = serializers.URLField(allow_null=True)
+    download_location = serializers.URLField(allow_null=True)
+    photographer_name = serializers.CharField(allow_null=True)
+    photographer_url = serializers.URLField(allow_null=True)
+
+
 class RecipeGenerateItemSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     title = serializers.CharField()
     ingredients = serializers.ListField(child=serializers.CharField())
     steps = serializers.ListField(child=serializers.CharField())
     prep_time_minutes = serializers.IntegerField(required=False, allow_null=True)
+    difficulty = serializers.ChoiceField(
+        choices=["easy", "medium", "hard"], required=False, allow_null=True
+    )
+    image = RecipeImageSerializer(required=False, allow_null=True)
 
 
 class RecipeGenerateResponseSerializer(serializers.Serializer):
@@ -50,4 +67,8 @@ class SavedRecipeResponseSerializer(serializers.Serializer):
     ingredients = serializers.ListField(child=serializers.CharField())
     steps = serializers.ListField(child=serializers.CharField())
     prep_time_minutes = serializers.IntegerField(required=False, allow_null=True)
+    difficulty = serializers.ChoiceField(
+        choices=["easy", "medium", "hard"], required=False, allow_null=True
+    )
+    image = RecipeImageSerializer(required=False, allow_null=True)
     created_at = serializers.DateTimeField()
