@@ -26,7 +26,8 @@ Use this schema:
       "ingredients_used": ["string"],
       "missing_ingredients": ["string"],
       "instructions": ["string"],
-      "prep_time_minutes": 0
+      "prep_time_minutes": 0,
+      "difficulty": "easy" | "medium" | "hard"
     }}
   ]
 }}
@@ -47,6 +48,8 @@ Rules:
 - "missing_ingredients" may only contain basic pantry staples: salt, pepper,
   oil, water, sugar, flour, butter. Do not put any perishable or specialty
   ingredient in "missing_ingredients"
+- "difficulty" must be exactly one of "easy", "medium", or "hard", based on
+  the number of steps, techniques required, and total prep time
 - If only one ingredient is provided, suggest simple recipes built primarily
   around that single ingredient, using only the pantry staples listed above
   as needed

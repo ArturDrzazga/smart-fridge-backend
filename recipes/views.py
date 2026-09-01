@@ -25,6 +25,7 @@ from recipes.services.rate_limit import (
     check_and_increment_daily_limit,
 )
 from recipes.services.task_registry import get_task_owner, register_task
+from recipes.services.unsplash_service import get_recipe_image
 from recipes.tasks import generate_recipe_suggestions_task, generate_recipe_task
 
 logger = logging.getLogger("django")
@@ -239,6 +240,7 @@ def _map_to_generate_schema(gemini_result):
                 "ingredients": ingredients,
                 "steps": steps,
                 "prep_time_minutes": recipe.get("prep_time_minutes"),
+                "difficulty": recipe.get("difficulty"),
             }
         )
     return {"recipes": recipes}
@@ -260,13 +262,18 @@ def _persist_generated_recipes(mapped_result):
     Recipe.objects.filter(recipes__isnull=True, created_at__lt=threshold).delete()
 
     for recipe in mapped_result["recipes"]:
+        image = get_recipe_image(recipe["title"])
         recipe_obj = Recipe.objects.create(
             title=recipe["title"],
             ingredients=recipe["ingredients"],
             steps=STEPS_SEPARATOR.join(recipe["steps"]),
             prep_time_minutes=recipe.get("prep_time_minutes"),
+            difficulty=recipe.get("difficulty"),
+            image=image,
         )
         recipe["id"] = recipe_obj.id
+        recipe["difficulty"] = recipe_obj.difficulty
+        recipe["image"] = image
     return mapped_result
 
 
@@ -399,6 +406,8 @@ def _serialize_saved_recipe(recipe):
         "ingredients": recipe.ingredients or [],
         "steps": steps,
         "prep_time_minutes": recipe.prep_time_minutes,
+        "difficulty": recipe.difficulty,
+        "image": recipe.image,
         "created_at": recipe.created_at,
     }
 

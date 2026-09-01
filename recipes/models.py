@@ -4,10 +4,24 @@ from config import settings
 
 
 class Recipe(models.Model):
+    DIFFICULTY_CHOICES = [
+        ("easy", "Easy"),
+        ("medium", "Medium"),
+        ("hard", "Hard"),
+    ]
+
     title = models.CharField(max_length=255)
     ingredients = models.JSONField(default=list)
     steps = models.TextField()
     prep_time_minutes = models.PositiveIntegerField(null=True, blank=True)
+    difficulty = models.CharField(
+        max_length=10, choices=DIFFICULTY_CHOICES, null=True, blank=True
+    )
+    # Stores the Unsplash photo data as a single JSON blob rather than
+    # separate columns, since it's always read/written as one unit and
+    # its shape (url + required attribution fields) is Unsplash's, not
+    # ours. See recipes/services/unsplash_service.py for the exact keys.
+    image = models.JSONField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
