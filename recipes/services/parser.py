@@ -49,6 +49,8 @@ def parse_gemini_response(raw_response_text):
         ingredients = item.get("ingredients") or item.get("ingredients_used")
         prep_time_minutes = item.get("prep_time_minutes")
         difficulty = item.get("difficulty")
+        description = item.get("description")
+        servings = item.get("servings")
 
         if not title:
             logger.warning(f"Recipe at index {index} is missing a title. Skipping.")
@@ -65,6 +67,8 @@ def parse_gemini_response(raw_response_text):
             "steps": [str(s) for s in steps],
             "prep_time_minutes": prep_time_minutes,
             "difficulty": difficulty,
+            "description": description,
+            "servings": servings,
         }
         parsed_recipes.append(recipe_entry)
 

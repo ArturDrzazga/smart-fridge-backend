@@ -11,8 +11,10 @@ class Recipe(models.Model):
     ]
 
     title = models.CharField(max_length=255)
+    description = models.CharField(max_length=500, null=True, blank=True)
     ingredients = models.JSONField(default=list)
     steps = models.TextField()
+    servings = models.PositiveIntegerField(null=True, blank=True)
     prep_time_minutes = models.PositiveIntegerField(null=True, blank=True)
     difficulty = models.CharField(
         max_length=10, choices=DIFFICULTY_CHOICES, null=True, blank=True

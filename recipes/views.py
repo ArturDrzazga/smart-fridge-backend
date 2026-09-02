@@ -175,6 +175,8 @@ class RecipeSuggestionTaskStatusView(APIView):
                             {
                                 "id": 42,
                                 "title": "Classic Fluffy Scrambled Eggs",
+                                "description": "A quick, comforting breakfast ready in minutes.",
+                                "servings": 2,
                                 "ingredients": [
                                     "eggs",
                                     "butter",
@@ -237,6 +239,8 @@ def _map_to_generate_schema(gemini_result):
         recipes.append(
             {
                 "title": recipe.get("title", ""),
+                "description": recipe.get("description"),
+                "servings": recipe.get("servings"),
                 "ingredients": ingredients,
                 "steps": steps,
                 "prep_time_minutes": recipe.get("prep_time_minutes"),
@@ -265,6 +269,8 @@ def _persist_generated_recipes(mapped_result):
         image = get_recipe_image(recipe["title"])
         recipe_obj = Recipe.objects.create(
             title=recipe["title"],
+            description=recipe.get("description"),
+            servings=recipe.get("servings"),
             ingredients=recipe["ingredients"],
             steps=STEPS_SEPARATOR.join(recipe["steps"]),
             prep_time_minutes=recipe.get("prep_time_minutes"),
@@ -321,6 +327,8 @@ class RecipeGenerateView(APIView):
                         {
                             "id": 42,
                             "title": "Classic Fluffy Scrambled Eggs",
+                            "description": "A quick, comforting breakfast ready in minutes.",
+                            "servings": 2,
                             "ingredients": ["eggs", "butter", "salt", "black pepper"],
                             "steps": [
                                 "Crack the eggs into a bowl and whisk until combined.",
@@ -403,6 +411,8 @@ def _serialize_saved_recipe(recipe):
     return {
         "id": recipe.id,
         "title": recipe.title,
+        "description": recipe.description,
+        "servings": recipe.servings,
         "ingredients": recipe.ingredients or [],
         "steps": steps,
         "prep_time_minutes": recipe.prep_time_minutes,
@@ -519,6 +529,8 @@ class SavedRecipeListView(APIView):
                     {
                         "id": 1,
                         "title": "Cheesy Tomato Omelette",
+                        "description": "A rich, cheesy twist on a classic omelette.",
+                        "servings": 2,
                         "ingredients": ["eggs", "tomatoes", "cheese"],
                         "steps": [
                             "Whisk eggs with a pinch of salt and pepper.",

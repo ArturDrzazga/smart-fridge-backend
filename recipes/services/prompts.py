@@ -23,6 +23,8 @@ Use this schema:
   "recipes": [
     {{
       "title": "string",
+      "description": "string",
+      "servings": 0,
       "ingredients_used": ["string"],
       "missing_ingredients": ["string"],
       "instructions": ["string"],
@@ -50,6 +52,11 @@ Rules:
   ingredient in "missing_ingredients"
 - "difficulty" must be exactly one of "easy", "medium", or "hard", based on
   the number of steps, techniques required, and total prep time
+- "description" must be one short, appetizing sentence (max ~20 words)
+  summarizing the dish, suitable for display on a recipe card
+- "servings" must be a realistic whole number of people the recipe serves,
+  based on the quantities implied by the ingredients (default to 2 if
+  unclear)
 - If only one ingredient is provided, suggest simple recipes built primarily
   around that single ingredient, using only the pantry staples listed above
   as needed
