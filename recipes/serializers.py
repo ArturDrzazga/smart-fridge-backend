@@ -49,8 +49,13 @@ class SavedRecipeResponseSerializer(serializers.Serializer):
     """
     Full recipe details, used by GET /api/recipes/saved/ and
     GET /api/recipes/<id>/.
+
+    saved_id is the SavedRecipe row's id (only populated by
+    GET /saved/) - this is the id DELETE /saved/<id>/ actually expects,
+    not the recipe's own id.
     """
     id = serializers.IntegerField()
+    saved_id = serializers.IntegerField(required=False, allow_null=True)
     title = serializers.CharField()
     description = serializers.CharField(required=False, allow_null=True)
     servings = serializers.IntegerField(required=False, allow_null=True)
