@@ -404,12 +404,21 @@ class RecipeGenerateView(APIView):
 # --- Saved recipes ---------------------------------------------------
 
 
-def _serialize_saved_recipe(recipe):
-    """Converts a Recipe model instance into the API's list-based shape."""
+def _serialize_saved_recipe(recipe, saved_id=None):
+    """
+    Converts a Recipe model instance into the API's list-based shape.
+
+    saved_id is the SavedRecipe row's id (not the Recipe's own id) -
+    only populated when called from a context tied to a specific saved
+    bookmark (GET /saved/), since that's the id DELETE /saved/<id>/
+    actually expects. Without this, clients had no way to discover
+    which id to pass to unsave a recipe (reported by Iryna).
+    """
     steps_text = recipe.steps or ""
     steps = [line for line in steps_text.split(STEPS_SEPARATOR) if line]
     return {
         "id": recipe.id,
+        "saved_id": saved_id,
         "title": recipe.title,
         "description": recipe.description,
         "servings": recipe.servings,
@@ -528,6 +537,7 @@ class SavedRecipeListView(APIView):
                 value=[
                     {
                         "id": 1,
+                        "saved_id": 10,
                         "title": "Cheesy Tomato Omelette",
                         "description": "A rich, cheesy twist on a classic omelette.",
                         "servings": 2,
@@ -557,7 +567,10 @@ class SavedRecipeListView(APIView):
             .select_related("recipe")
             .order_by("-recipe__created_at")
         )
-        data = [_serialize_saved_recipe(saved.recipe) for saved in saved_recipes]
+        data = [
+            _serialize_saved_recipe(saved.recipe, saved_id=saved.id)
+            for saved in saved_recipes
+        ]
         return Response(data, status=status.HTTP_200_OK)
 
 
