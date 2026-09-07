@@ -40,8 +40,34 @@ class LoginSerializer(TokenObtainPairSerializer):
 
         return data
 
+
 class UserProfileSerializer(serializers.ModelSerializer):
+    """
+    Used by both GET /api/auth/me/ (full read) and PATCH /api/auth/me/
+    (partial update). first_name/last_name are optional - registration
+    only collects email/password, so a user's name starts blank and can
+    be set/edited here later (the Profile Modal design shows a name but
+    there's currently no registration step that collects one).
+    """
+
     class Meta:
         model = User
-        fields = ["id", "email", "created_at"]
+        fields = ["id", "email", "first_name", "last_name", "created_at"]
         read_only_fields = ["id", "email", "created_at"]
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    """
+    Used by POST /api/auth/change-password/. Requires the current
+    password to authorize the change, distinct from a password-reset
+    flow (which would instead verify identity via emailed token).
+    """
+
+    current_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True, min_length=8)
+
+    def validate_current_password(self, value):
+        user = self.context["request"].user
+        if not user.check_password(value):
+            raise serializers.ValidationError("Current password is incorrect.")
+        return value

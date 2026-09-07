@@ -5,6 +5,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from users.serializers import (
+    ChangePasswordSerializer,
     LoginSerializer,
     RegisterSerializer,
     UserProfileSerializer,
@@ -117,7 +118,10 @@ class ProtectedTestView(APIView):
 
 class UserProfileView(APIView):
     """
-        API view to retrieve details of the currently authenticated user.
+        API view to retrieve or partially update details of the
+        currently authenticated user. first_name/last_name are the only
+        editable fields via PATCH - email is fixed (it's the login
+        identifier) and created_at is server-managed.
     """
     permission_classes = [permissions.IsAuthenticated]
 
@@ -130,9 +134,100 @@ class UserProfileView(APIView):
                             "were not provided or are invalid."
             ),
         },
-        description="Returns details (id, email, date joined) "
+        description="Returns details (id, email, name, date joined) "
                     "for the currently authenticated user.",
     )
     def get(self, request):
         serializer = UserProfileSerializer(request.user)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @extend_schema(
+        tags=["Authentication"],
+        request=UserProfileSerializer,
+        responses={
+            200: UserProfileSerializer,
+            400: OpenApiResponse(description="Validation error."),
+            401: OpenApiResponse(
+                description="Authentication credentials "
+                            "were not provided or are invalid."
+            ),
+        },
+        examples=[
+            OpenApiExample(
+                "Request",
+                value={"first_name": "John", "last_name": "Doe"},
+                request_only=True,
+            ),
+        ],
+        description="Partially update the currently authenticated "
+                    "user's first_name and/or last_name.",
+    )
+    def patch(self, request):
+        serializer = UserProfileSerializer(
+            request.user, data=request.data, partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+@extend_schema(
+    tags=["Authentication"],
+    request=ChangePasswordSerializer,
+    responses={
+        200: OpenApiResponse(description="Password changed successfully."),
+        400: OpenApiResponse(
+            description="Validation error (e.g. current password is incorrect, "
+                        "new password too short)."
+        ),
+        401: OpenApiResponse(
+            description="Authentication credentials "
+                        "were not provided or are invalid."
+        ),
+    },
+    examples=[
+        OpenApiExample(
+            "Request",
+            value={
+                "current_password": "OldPassword123!",
+                "new_password": "NewPassword456!",
+            },
+            request_only=True,
+        ),
+        OpenApiExample(
+            "Success",
+            value={"detail": "Password changed successfully."},
+            response_only=True,
+            status_codes=["200"],
+        ),
+        OpenApiExample(
+            "Wrong current password",
+            value={"current_password": ["Current password is incorrect."]},
+            response_only=True,
+            status_codes=["400"],
+        ),
+    ],
+    description="Change the currently authenticated user's password. "
+                "Requires the current password to authorize the change.",
+)
+class ChangePasswordView(APIView):
+    """
+        API view allowing the currently authenticated user to change
+        their own password, given their current password.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        serializer = ChangePasswordSerializer(
+            data=request.data, context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+
+        user = request.user
+        user.set_password(serializer.validated_data["new_password"])
+        user.save(update_fields=["password"])
+
+        return Response(
+            {"detail": "Password changed successfully."},
+            status=status.HTTP_200_OK,
+        )
