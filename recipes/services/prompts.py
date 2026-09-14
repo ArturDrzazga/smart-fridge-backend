@@ -47,6 +47,11 @@ Rules:
   add proteins (meat, fish, eggs, tofu), dairy, vegetables, fruits, or any
   other perishable ingredient that was not explicitly listed, even if the
   recipe would be more interesting with it
+- "ingredients_used" must contain only the plain ingredient name (e.g.
+  "chicken", "cheese"). Never include the expiry annotation (e.g.
+  "expires in N day(s)", "expired N day(s) ago", "no expiry date set") -
+  that annotation is for your own prioritization only and must not appear
+  in the output
 - "missing_ingredients" may only contain basic pantry staples: salt, pepper,
   oil, water, sugar, flour, butter. Do not put any perishable or specialty
   ingredient in "missing_ingredients"
