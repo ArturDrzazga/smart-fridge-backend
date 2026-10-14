@@ -24,7 +24,11 @@ from recipes.services.rate_limit import (
     DAILY_RECIPE_GENERATION_LIMIT,
     check_and_increment_daily_limit,
 )
-from recipes.services.task_registry import get_task_owner, register_task
+from recipes.services.task_registry import (
+    get_task_owner,
+    is_task_timed_out,
+    register_task,
+)
 from recipes.services.unsplash_service import get_recipe_image
 from recipes.tasks import generate_recipe_suggestions_task, generate_recipe_task
 
@@ -166,6 +170,16 @@ class RecipeSuggestionTaskStatusView(APIView):
                 status_codes=["200"],
             ),
             OpenApiExample(
+                "Task timed out (worker did not pick it up in time)",
+                value={
+                    "task_id": "bd56719b-9b55-4754-8b22-42b460314d84",
+                    "status": "TIMEOUT",
+                    "error": "Recipe generation is taking too long. Please try again in a moment.",
+                },
+                response_only=True,
+                status_codes=["200"],
+            ),
+            OpenApiExample(
                 "Task completed successfully",
                 value={
                     "task_id": "bd56719b-9b55-4754-8b22-42b460314d84",
@@ -212,7 +226,16 @@ class RecipeSuggestionTaskStatusView(APIView):
             "status": task_result.status,
         }
 
-        if task_result.status == "SUCCESS":
+        # Celery reports PENDING both for "queued/being processed" and for
+        # "the worker never picked this up" (e.g. it is asleep). If the task
+        # has been PENDING for too long, tell the client to stop polling.
+        if task_result.status == "PENDING" and is_task_timed_out(task_id):
+            response_data["status"] = "TIMEOUT"
+            response_data["error"] = (
+                "Recipe generation is taking too long. "
+                "Please try again in a moment."
+            )
+        elif task_result.status == "SUCCESS":
             mapped = _map_to_generate_schema(task_result.result)
             response_data["result"] = _persist_generated_recipes(mapped)
         elif task_result.status == "FAILURE":
